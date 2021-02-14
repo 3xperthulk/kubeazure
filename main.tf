@@ -46,7 +46,7 @@ resource "azurerm_virtual_network" "KubernetesVNet" {
   location            = azurerm_resource_group.KubernetesRG.location
   resource_group_name = azurerm_resource_group.KubernetesRG.name
   address_space       = ["10.0.0.0/16"]
-  dns_servers         = ["10.0.0.4", "10.0.0.5"]
+ #dns_servers         = ["10.0.0.4", "10.0.0.5"]
 
   tags = {
     environment = "Kubernetes"
@@ -57,7 +57,7 @@ resource "azurerm_subnet" "KubetneteSubnet" {
   name                 = "kubetnete-subnet"
   resource_group_name  = azurerm_resource_group.KubernetesRG.name
   virtual_network_name = azurerm_virtual_network.KubernetesVNet.name
-  address_prefixes     = ["10.1.0.0/16"]
+  address_prefixes     = ["10.0.1.0/24"]
 }
 
 resource "azurerm_public_ip" "KubernetesIP" {
@@ -103,8 +103,17 @@ resource "azurerm_network_interface" "ControllerNIC" {
 resource "azurerm_network_interface_backend_address_pool_association" "NicLbAssoc" {
   count                   = 3
   network_interface_id    = azurerm_network_interface.ControllerNIC[count.index].id
-  ip_configuration_name   = "kubernetes-ip-configuration"
+  ip_configuration_name   = "controller-configuration"
   backend_address_pool_id = azurerm_lb_backend_address_pool.KubernetesLbBackend.id
+}
+
+resource "azurerm_availability_set" "KubernetesAvset" {
+ name                         = "kubernetes-avset"
+ location            = azurerm_resource_group.KubernetesRG.location
+ resource_group_name = azurerm_resource_group.KubernetesRG.name
+ platform_fault_domain_count  = 2
+ platform_update_domain_count = 2
+ managed                      = true
 }
 
 resource "azurerm_linux_virtual_machine" "ControllerVM" {
@@ -112,14 +121,15 @@ resource "azurerm_linux_virtual_machine" "ControllerVM" {
   name                  = "controller-vm${count.index}"
   location              = azurerm_resource_group.KubernetesRG.location
   resource_group_name   = azurerm_resource_group.KubernetesRG.name
-  network_interface_ids = azurerm_network_interface.ControllerNIC[count.index].id
+  network_interface_ids = [element(azurerm_network_interface.ControllerNIC.*.id, count.index)] #azurerm_network_interface.ControllerNIC[count.index].id
+  availability_set_id   = azurerm_availability_set.KubernetesAvset.id
   size                  = "Standard_DS1_v2"
-  admin_username        = "kuser"
+  admin_username        = "azureuser"
 
   source_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "16.04-LTS"
+    publisher = "OpenLogic"
+    offer     = "CentOS"
+    sku       = "7.5"
     version   = "latest"
   }
   os_disk {
@@ -127,7 +137,7 @@ resource "azurerm_linux_virtual_machine" "ControllerVM" {
     storage_account_type = "Standard_LRS"
   }
   admin_ssh_key {
-    username   = "kuser"
+    username   = "azureuser"
     public_key = file(var.sshFilePath)
   }
 
@@ -154,22 +164,22 @@ resource "azurerm_linux_virtual_machine" "WorkerVM" {
   name                  = "worker-vm${count.index}"
   location              = azurerm_resource_group.KubernetesRG.location
   resource_group_name   = azurerm_resource_group.KubernetesRG.name
-  network_interface_ids = azurerm_network_interface.ControllerNIC[count.index].id
+  network_interface_ids = [element(azurerm_network_interface.WorkerNIC.*.id, count.index)] #azurerm_network_interface.ControllerNIC[count.index].id
   size                  = "Standard_DS1_v2"
-  admin_username        = "kuser"
+  admin_username        = "azureuser"
 
   source_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "16.04-LTS"
+    publisher = "OpenLogic"
+    offer     = "CentOS"
+    sku       = "7.5"
     version   = "latest"
-  }
+}
   os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
   }
   admin_ssh_key {
-    username   = "kuser"
+    username   = "azureuser"
     public_key = file(var.sshFilePath)
   }
 
